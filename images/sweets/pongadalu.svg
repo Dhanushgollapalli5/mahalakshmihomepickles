@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#f0f7ff" stroke="#6d8fe0" stroke-width="8" rx="20"/>
+  <text x="50%" y="45%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" fill="#2f4a7d">Pongadalu</text>
+  <text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#2f4a7d">350 per kg</text>
+  <circle cx="200" cy="220" r="38" fill="#6d8fe0" opacity="0.35"/>
+</svg>
