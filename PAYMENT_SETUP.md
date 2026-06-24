@@ -1,177 +1,134 @@
-# Mahalakshmi Home Pickles - Payment System Setup Guide
+# Mahalakshmi Home Pickles — Payment & Order Setup
 
-## Quick Start
+## Overview
 
-### 1. Start the Server
+Checkout uses **UPI QR payment** (PhonePe, Google Pay, Paytm, or any UPI app). After the customer pays, they confirm payment and the server sends **email** and **WhatsApp** notifications (when configured).
+
+## Quick start
+
 ```bash
+npm install
+cp .env.example .env
+# Edit .env with your UPI ID and notification credentials
 npm start
 ```
-Server will run on `http://localhost:3000`
 
-### 2. Access the Website
-Open your browser to:
-- Local: `http://localhost:3000`
-- Or open `index.html` directly (limited payment features without server)
+Open `https://mahalakshmihomepickles.com/` and place a test order.
 
-## Payment System Features
+## Payment flow (customer)
 
-### ✅ Currently Working
-- **Razorpay Integration**: Live payment gateway configured
-  - Order Creation: ✓ Working
-  - Signature Verification: ✓ Working
-  - Payment Processing: ✓ Ready
+1. Select products and open checkout (cart or catalogue).
+2. Enter name, address, phone, and optional email.
+3. Scan the UPI QR code and pay the exact total shown.
+4. Check **“I have completed the UPI payment”** and tap **Confirm Order**.
+5. View the success page; WhatsApp/email are sent if the server is configured.
 
-- **Cart System**: 
-  - Add/Remove items: ✓ Working
-  - Cart persistence: ✓ Using localStorage
-  - Checkout: ✓ Ready
+## Environment variables
 
-- **Order Flow**:
-  - Product selection: ✓ Working
-  - Cart management: ✓ Working
-  - Order form: ✓ Ready
-  - Payment modal: ✓ Ready
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PORT` | No | Server port (default `3000`) |
+| `UPI_ID` | No | Your UPI VPA (default `9700511609@ybl`) |
+| `UPI_PAYEE_NAME` | No | Name shown in UPI apps |
+| `GMAIL_USER` | For email | Gmail address for SMTP |
+| `GMAIL_PASSWORD` | For email | Gmail [App Password](https://myaccount.google.com/apppasswords) |
+| `ORDER_EMAIL` | For email | Shop inbox (also BCC on customer emails) |
+| `TWILIO_ACCOUNT_SID` | For WhatsApp | Twilio Account SID (starts with `AC`) |
+| `TWILIO_AUTH_TOKEN` | For WhatsApp | Twilio auth token |
+| `TWILIO_WHATSAPP_FROM` | For WhatsApp | e.g. `whatsapp:+14155238886` (sandbox) |
+| `ORDER_WHATSAPP_TO` | For WhatsApp | Fallback shop number if customer phone missing |
+| `WHATSAPP_PROVIDER` | Optional | `twilio` or `callmebot`; defaults to CallMeBot if configured |
+| `CALLMEBOT_API_KEY` | Optional | CallMeBot API key for WhatsApp order alerts |
+| `CALLMEBOT_PHONE` | Optional | Your shop WhatsApp phone number in 91XXXXXXXXXX format |
 
-### ⚙️ Configuration Required
+## API endpoints
 
-#### Option 1: Enable Email Notifications
-```
-1. Go to: https://myaccount.google.com/apppasswords
-2. Select "Mail" and "Windows Computer"
-3. Copy the 16-character password
-4. Update .env:
-   GMAIL_USER=your-email@gmail.com
-   GMAIL_PASSWORD=<16-char password>
-   ORDER_EMAIL=recipient@example.com
-5. Restart server: npm start
-```
+### `GET /api/config`
 
-#### Option 2: Enable WhatsApp Notifications (Optional)
-```
-1. Create Twilio account: https://www.twilio.com/console
-2. Get WhatsApp Sandbox credentials
-3. Update .env with:
-   TWILIO_ACCOUNT_SID=<your-sid>
-   TWILIO_AUTH_TOKEN=<your-token>
-   TWILIO_WHATSAPP_FROM=whatsapp:+1234567890
-   ORDER_WHATSAPP_TO=+919876543210
-4. Restart server: npm start
+Returns UPI settings for the checkout UI:
+
+```json
+{
+  "paymentMode": "upi",
+  "upiId": "9700511609@ybl",
+  "payeeName": "Mahalakshmi Home Pickles"
+}
 ```
 
-## Payment Flow
+### `POST /api/order-notification`
 
-### For Customers
-1. Browse products
-2. Select items (checkbox)
-3. Click "Order Selected Items" or add to cart
-4. Enter delivery details in checkout form
-5. Click "Pay Now"
-6. Complete Razorpay payment
-7. Receive order confirmation
+Called after the customer confirms UPI payment. Sends email and WhatsApp.
 
-### For Admin
-1. Check `.env` for notification setup
-2. Orders are verified using Razorpay signature
-3. Emails sent to: `ORDER_EMAIL` in .env
-4. WhatsApp notifications to: `ORDER_WHATSAPP_TO` in .env
-
-## Testing Payments
-
-### Test Mode (Optional)
-Use Razorpay test credentials:
-```
-Key ID: rzp_test_[test-id]
-Key Secret: [test-secret]
+```bash
+curl -X POST http://localhost:3000/api/order-notification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "orderNumber": "MHP-123",
+    "amount": 500,
+    "customerName": "Test User",
+    "email": "test@example.com",
+    "phone": "919876543210",
+    "address": "Hyderabad",
+    "orderSummary": "1x Mango Pickle",
+    "paymentMethod": "UPI"
+  }'
 ```
 
-### Test Payment Details
-- Card: 4111111111111111
-- Expiry: Any future date
-- CVV: Any 3 digits
+### `POST /api/test-notification`
+
+Sends a test email/WhatsApp using sample data (useful after configuring `.env`).
+
+## WhatsApp notifications
+
+### Option 1: CallMeBot (recommended for simple setup)
+
+1. Go to https://wa.me/+34644523740 and send the message: `I allow callmebot to send me messages`
+2. Copy the API key from the reply.
+3. In your `.env` file, set:
+
+```bash
+WHATSAPP_PROVIDER=callmebot
+CALLMEBOT_API_KEY=your_callmebot_api_key
+CALLMEBOT_PHONE=919XXXXXXXXXX
+```
+
+4. Restart the server and place a test order, or call `/api/test-notification`.
+
+### Option 2: Twilio WhatsApp
+
+1. Create a [Twilio](https://www.twilio.com/console) account and open the WhatsApp sandbox.
+2. Join the sandbox from your phone using the code Twilio provides.
+3. Set `WHATSAPP_PROVIDER=twilio` and configure:
+
+```bash
+TWILIO_ACCOUNT_SID=ACXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+ORDER_WHATSAPP_TO=+919XXXXXXXXX
+```
+
+4. Restart the server and place a test order, or call `/api/test-notification`.
+
+Customer phone numbers from checkout are used when valid; otherwise `ORDER_WHATSAPP_TO` is used.
 
 ## Troubleshooting
 
-### Server Won't Start
-```bash
-# Check if port 3000 is in use
-lsof -i :3000
+| Issue | Fix |
+|-------|-----|
+| QR code does not load | Check internet access (QR is generated via a public API). UPI ID still works manually. |
+| Notifications not sent | Verify `.env`, restart `npm start`, check server logs. |
+| `file://` checkout | Run `npm start` and use `http://localhost:3000` so `/api/config` and notifications work. |
+| WhatsApp fails | Confirm sandbox join, `TWILIO_ACCOUNT_SID` starts with `AC`, and numbers use `+91` format. |
 
-# Kill existing process
-kill -9 <PID>
+## Security notes
 
-# Restart
-npm start
-```
+- Do not commit `.env` to git.
+- UPI payments are confirmed manually by the customer checkbox; verify payments in your UPI app before dispatching orders.
+- Use HTTPS in production.
 
-### Payment Not Loading
-- Ensure server is running: `npm start`
-- Check browser console for errors (F12)
-- Verify `.env` has valid RAZORPAY_KEY_ID
+## File reference
 
-### Emails Not Sending
-- Verify Gmail settings (GMAIL_USER, GMAIL_PASSWORD)
-- Check if App Password is generated (not regular password)
-- Look for server logs: `error: Failed to send email`
-
-### Cart Not Working
-- Enable JavaScript in browser
-- Check localStorage is not disabled
-- Clear browser cache if needed
-
-## File Structure
-
-```
-maha/
-├── index.html           # Main website
-├── script.js            # Frontend logic & cart
-├── server.js            # Backend payment processing
-├── styles.css           # Styling
-├── .env                 # Configuration (⚠️ Keep private!)
-├── package.json         # Dependencies
-└── images/              # Product images
-```
-
-## API Endpoints
-
-### GET `/api/config`
-Returns Razorpay public key
-```bash
-curl http://localhost:3000/api/config
-```
-
-### POST `/api/create-order`
-Creates a payment order
-```bash
-curl -X POST http://localhost:3000/api/create-order \
-  -H "Content-Type: application/json" \
-  -d '{"amount":10000}'
-```
-
-### POST `/api/verify-payment`
-Verifies payment signature and sends notifications
-```bash
-curl -X POST http://localhost:3000/api/verify-payment \
-  -H "Content-Type: application/json" \
-  -d '{...payment details...}'
-```
-
-## Security Notes
-
-⚠️ **Important:**
-1. Never commit `.env` to git - add to `.gitignore`
-2. Keep RAZORPAY_KEY_SECRET private
-3. Always verify signatures (already implemented)
-4. Use HTTPS in production
-5. Store credentials securely
-
-## Support
-
-For issues:
-1. Check server logs: `npm start`
-2. Verify `.env` configuration
-3. Check browser console (F12)
-4. Ensure Node.js v16+ is installed
-
----
-
-**Status**: ✅ All payment systems configured and ready!
+- `script.js` — Cart, checkout modal, UPI QR, order submission
+- `server.js` — `/api/config`, notifications
+- `success.html` — Post-checkout confirmation page
+- `.env.example` — Template for configuration

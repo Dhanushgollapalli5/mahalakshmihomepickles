@@ -1,0 +1,20 @@
+[Unit]
+Description=Maha Node.js App
+After=network.target
+
+[Service]
+Environment=NODE_ENV=production
+EnvironmentFile=/var/www/maha/.env
+WorkingDirectory=/var/www/maha
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=maha
+# Adjust the user/group to the account that should run the app
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

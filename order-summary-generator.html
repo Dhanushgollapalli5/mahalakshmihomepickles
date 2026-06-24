@@ -312,12 +312,11 @@
           <input type="text" id="deldate" placeholder="e.g. 5 May" oninput="generate()" />
         </div>
         <div>
-          <label>Payment Status</label>
+          <label>Order Status</label>
           <select id="payment" onchange="generate()">
             <option value="COD Pending">COD Pending</option>
-            <option value="Paid via UPI">Paid via UPI</option>
-            <option value="Paid Online">Paid Online</option>
             <option value="Bank Transfer Pending">Bank Transfer Pending</option>
+            <option value="Order Received">Order Received</option>
           </select>
         </div>
         <div class="form-full">
@@ -484,7 +483,7 @@ Delivery          ₹${fmt(dlv)}/-
 
 📦 Expected Delivery: ${deldate}
 📍 Shipping to: ${address}
-💳 Payment: ${payment}
+� Order Status: ${payment}
 
 All our products are freshly prepared at home with no preservatives. 🏡
 
