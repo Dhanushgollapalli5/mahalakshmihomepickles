@@ -5,7 +5,7 @@ const nodemailer = require('nodemailer');
 const twilio = require('twilio');
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
-require('dotenv').config();
+require('dotenv').config({ override: true });
 
 const {
   PORT = 3000,
@@ -30,7 +30,7 @@ function normalizePaymentMode(rawValue) {
   const mode = String(rawValue || '').toLowerCase().trim();
 
   if (!mode) {
-    return 'offline';
+    return 'razorpay';
   }
 
   const aliases = {
@@ -39,36 +39,27 @@ function normalizePaymentMode(rawValue) {
     'online-payment': 'razorpay',
     pay: 'razorpay',
     card: 'razorpay',
-    upi: 'razorpay',
-    offline: 'offline',
-    manual: 'offline',
-    cod: 'offline',
-    cash: 'offline',
-    'cash-on-delivery': 'offline',
-    none: 'offline'
+    upi: 'razorpay'
   };
 
-  return aliases[mode] || 'offline';
+  return aliases[mode] || 'razorpay';
 }
 
 const requestedPaymentMode = normalizePaymentMode(PAYMENT_MODE);
-const isRazorpayMode = requestedPaymentMode === 'razorpay';
-const isOfflineMode = requestedPaymentMode === 'offline';
-let effectivePaymentMode = requestedPaymentMode;
+const hasRazorpayConfig = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
+const effectivePaymentMode = 'razorpay';
 
 if (requestedPaymentMode !== (PAYMENT_MODE || '').toLowerCase().trim()) {
-  console.warn(`PAYMENT_MODE=${PAYMENT_MODE} was normalized to ${effectivePaymentMode}.`);
+  console.warn(`PAYMENT_MODE=${PAYMENT_MODE} was normalized to ${requestedPaymentMode}. Using Razorpay-only mode for checkout.`);
 }
 
-const hasRazorpayConfig = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
 const razorpay = hasRazorpayConfig ? new Razorpay({
   key_id: RAZORPAY_KEY_ID,
   key_secret: RAZORPAY_KEY_SECRET
 }) : null;
 
-if (isRazorpayMode && !hasRazorpayConfig) {
-  console.warn('PAYMENT_MODE=razorpay but RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Falling back to offline payment mode.');
-  effectivePaymentMode = 'offline';
+if (!hasRazorpayConfig) {
+  console.warn('Razorpay keys are not configured. Online payment mode is enabled, but payment creation will fail until you add your Razorpay keys.');
 }
 
 // Initialize email transporter
@@ -284,12 +275,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 app.get('/api/config', (req, res) => {
-  const backendMode = hasRazorpayConfig ? 'razorpay' : (effectivePaymentMode || 'offline');
   res.json({
     razorpayKey: RAZORPAY_KEY_ID || '',
     razorpayKeyId: RAZORPAY_KEY_ID || '',
     currency: process.env.CURRENCY || 'INR',
-    paymentMode: backendMode,
+    paymentMode: 'razorpay',
     supportsRazorpay: hasRazorpayConfig,
     upiId: process.env.UPI_ID || ''
   });

@@ -20,6 +20,11 @@ const REMOTE_API_BASE_URL_MANUAL = '';
 // meta tag <meta name="payment-mode" content="razorpay" /> in your HTML.
 const REMOTE_PAYMENT_MODE_MANUAL = '';
 
+const isLocalHost = (() => {
+  const { protocol, hostname } = window.location;
+  return protocol === 'file:' || hostname === '' || hostname === 'localhost' || hostname === '127.0.0.1';
+})();
+
 // Resolve REMOTE_API_BASE_URL with the following precedence:
 // 1) manual override in this file (REMOTE_API_BASE_URL_MANUAL)
 // 2) global override on window.__MAHA_API_BASE_URL__
@@ -31,7 +36,7 @@ if (!REMOTE_API_BASE_URL && typeof window !== 'undefined' && window.__MAHA_API_B
   REMOTE_API_BASE_URL = String(window.__MAHA_API_BASE_URL__).trim().replace(/\/$/, '');
 }
 
-if (!REMOTE_API_BASE_URL && typeof document !== 'undefined') {
+if (!REMOTE_API_BASE_URL && !isLocalHost && typeof document !== 'undefined') {
   const meta = document.querySelector('meta[name="api-base-url"]');
   if (meta && meta.content && meta.content.trim()) {
     REMOTE_API_BASE_URL = meta.content.trim().replace(/\/$/, '');
@@ -48,7 +53,7 @@ if (!REMOTE_PAYMENT_MODE && typeof window !== 'undefined' && window.__MAHA_PAYME
   REMOTE_PAYMENT_MODE = String(window.__MAHA_PAYMENT_MODE__).trim();
 }
 
-if (!REMOTE_PAYMENT_MODE && typeof document !== 'undefined') {
+if (!REMOTE_PAYMENT_MODE && !isLocalHost && typeof document !== 'undefined') {
   const meta = document.querySelector('meta[name="payment-mode"]');
   if (meta && meta.content && meta.content.trim()) {
     REMOTE_PAYMENT_MODE = meta.content.trim();
@@ -56,15 +61,15 @@ if (!REMOTE_PAYMENT_MODE && typeof document !== 'undefined') {
 }
 
 const API_BASE_URL = (() => {
-  const { protocol, hostname, origin } = window.location;
+  const { origin } = window.location;
 
   if (REMOTE_API_BASE_URL) {
     return REMOTE_API_BASE_URL.replace(/\/$/, '');
   }
 
   // Running from file:// or local development
-  if (protocol === 'file:' || hostname === '' || hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://localhost:3000';
+  if (isLocalHost) {
+    return origin || 'http://localhost:3000';
   }
 
   // Same-domain deployment
@@ -75,24 +80,15 @@ const PAYMENT_CONFIG_URL = API_BASE_URL ? new URL('/api/config', API_BASE_URL).t
 const API_ENDPOINT = (path) => API_BASE_URL.replace(/\/$/, '') + path;
 
 const DEFAULT_PAYMENT_CONFIG = {
-  paymentMode: 'offline',
+  paymentMode: 'razorpay',
   razorpayKeyId: ''
 };
 
 let paymentConfig = null;
 
 function normalizePaymentMode(mode) {
-  const normalizedMode = String(mode || '').toLowerCase().trim();
-
-  if (!normalizedMode) {
-    return 'offline';
-  }
-
-  if (['razorpay', 'online', 'online-payment', 'pay', 'card', 'upi'].includes(normalizedMode)) {
-    return 'razorpay';
-  }
-
-  return 'offline';
+  // Only Razorpay is supported for online checkout.
+  return 'razorpay';
 }
 
 async function loadPaymentConfig() {
@@ -110,10 +106,8 @@ async function loadPaymentConfig() {
 
   try {
     const data = await fetchConfig(PAYMENT_CONFIG_URL);
-    const backendMode = normalizePaymentMode(data.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode);
-    const finalMode = normalizePaymentMode(REMOTE_PAYMENT_MODE || backendMode);
     paymentConfig = {
-      paymentMode: finalMode,
+      paymentMode: 'razorpay',
       razorpayKeyId: data.razorpayKeyId || data.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId,
       supportsRazorpay: Boolean(data.razorpayKeyId || data.razorpayKey)
     };
@@ -126,9 +120,8 @@ async function loadPaymentConfig() {
       try {
         const fallbackData = await fetchConfig(sameOriginUrl);
         console.warn(`Loaded payment config from fallback ${sameOriginUrl}.`);
-        const backendMode = normalizePaymentMode(fallbackData.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode);
         paymentConfig = {
-          paymentMode: normalizePaymentMode(REMOTE_PAYMENT_MODE || backendMode),
+          paymentMode: 'razorpay',
           razorpayKeyId: fallbackData.razorpayKeyId || fallbackData.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId,
           supportsRazorpay: Boolean(fallbackData.razorpayKeyId || fallbackData.razorpayKey)
         };
@@ -907,10 +900,8 @@ async function sendOrderNotification(notificationData) {
 
 async function showOrderModal(items, total, message, orderNumber) {
   const config = await loadPaymentConfig();
-const paymentModeText = config.paymentMode === 'razorpay' ? 'Razorpay' : 'Offline / Manual Payment';
-    const paymentModeNote = config.paymentMode === 'razorpay'
-      ? 'You will pay securely through Razorpay checkout in the next step.'
-      : 'No online payment gateway is available right now. Confirm your order here and we will contact you to complete payment.';
+  const paymentModeText = 'Razorpay';
+  const paymentModeNote = 'You will pay securely through Razorpay checkout in the next step.';
 
   const existingModal = document.querySelector('.order-modal');
   if (existingModal) existingModal.remove();
@@ -1130,65 +1121,36 @@ const paymentModeText = config.paymentMode === 'razorpay' ? 'Razorpay' : 'Offlin
 
     confirmBtn.style.display = 'none';
 
-    if (config.paymentMode === 'razorpay') {
-      if (!config.razorpayKeyId && !config.razorpayKey) {
-        showNotification('Razorpay is not configured. Please contact support.', 'error');
-        return;
-      }
-
-      step2.innerHTML = `
-        <div class="order-summary-compact">
-          ${orderIdHtml}
-          <div class="order-total">
-            <strong>Total Payable:</strong> ₹${totalWithFees}/-
-          </div>
-          <div class="payment-razorpay-header">
-            <p>Click the button below to complete your payment through Razorpay.</p>
-          </div>
-          <button class="button btn-primary" id="razorpay-pay-button" type="button">Pay ₹${totalWithFees} Now</button>
-          <div class="payment-instructions">
-            <p><strong>Order Number:</strong> ${escapeHTML(orderNumber || 'MHP')}</p>
-            <p class="payment-hint">After payment, your order will be confirmed automatically.</p>
-          </div>
-        </div>
-      `;
-
-      const payButton = step2.querySelector('#razorpay-pay-button');
-      payButton.addEventListener('click', async () => {
-        payButton.disabled = true;
-        payButton.textContent = 'Opening Razorpay...';
-        await processRazorpayPayment({ orderData, totalWithFees, orderNumber, message, config });
-        payButton.disabled = false;
-        payButton.textContent = `Pay ₹${totalWithFees} Now`;
-      });
-    } else {
-      step2.innerHTML = `
-        <div class="order-summary-compact">
-          ${orderIdHtml}
-          <div class="order-total">
-            <strong>Total Payable:</strong> ₹${totalWithFees}/-
-          </div>
-          <div class="payment-offline-header">
-            <p>Backend payment gateway is not available right now.</p>
-            <p>Confirm your order here and we will contact you to complete payment.</p>
-          </div>
-          <button class="button btn-primary" id="offline-confirm-button" type="button">Confirm Order</button>
-          <div class="payment-instructions">
-            <p><strong>Order Number:</strong> ${escapeHTML(orderNumber || 'MHP')}</p>
-            <p class="payment-hint">After confirmation, we will reach out to you via phone or WhatsApp.</p>
-          </div>
-        </div>
-      `;
-
-      const confirmButton = step2.querySelector('#offline-confirm-button');
-      confirmButton.addEventListener('click', async () => {
-        confirmButton.disabled = true;
-        confirmButton.textContent = 'Confirming order...';
-        await submitOrder({ ...orderData, items, total: totalWithFees });
-        confirmButton.disabled = false;
-        confirmButton.textContent = 'Confirm Order';
-      });
+    if (!config.razorpayKeyId && !config.razorpayKey) {
+      showNotification('Razorpay is not configured. Please contact support.', 'error');
+      return;
     }
+
+    step2.innerHTML = `
+      <div class="order-summary-compact">
+        ${orderIdHtml}
+        <div class="order-total">
+          <strong>Total Payable:</strong> ₹${totalWithFees}/-
+        </div>
+        <div class="payment-razorpay-header">
+          <p>Click the button below to complete your payment through Razorpay.</p>
+        </div>
+        <button class="button btn-primary" id="razorpay-pay-button" type="button">Pay ₹${totalWithFees} Now</button>
+        <div class="payment-instructions">
+          <p><strong>Order Number:</strong> ${escapeHTML(orderNumber || 'MHP')}</p>
+          <p class="payment-hint">After payment, your order will be confirmed automatically.</p>
+        </div>
+      </div>
+    `;
+
+    const payButton = step2.querySelector('#razorpay-pay-button');
+    payButton.addEventListener('click', async () => {
+      payButton.disabled = true;
+      payButton.textContent = 'Opening Razorpay...';
+      await processRazorpayPayment({ orderData, totalWithFees, orderNumber, message, config });
+      payButton.disabled = false;
+      payButton.textContent = `Pay ₹${totalWithFees} Now`;
+    });
   }
 
   function validateCustomerInfo() {

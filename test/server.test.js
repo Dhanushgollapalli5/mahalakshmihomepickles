@@ -7,7 +7,7 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test('starts in offline mode when Razorpay is not configured', async () => {
+test('returns Razorpay mode even when Razorpay keys are not configured', async () => {
   const child = spawn(process.execPath, ['server.js'], {
     cwd: `${__dirname}/..`,
     env: {
@@ -51,13 +51,13 @@ test('starts in offline mode when Razorpay is not configured', async () => {
   assert.equal(response.status, 200);
 
   const data = JSON.parse(responseText);
-  assert.equal(data.paymentMode, 'offline');
+  assert.equal(data.paymentMode, 'razorpay');
 
   child.kill('SIGTERM');
   await once(child, 'exit').catch(() => {});
 });
 
-test('falls back to offline mode for unsupported payment-mode values', async () => {
+test('still returns Razorpay mode for unsupported payment-mode values', async () => {
   const child = spawn(process.execPath, ['server.js'], {
     cwd: `${__dirname}/..`,
     env: {
@@ -101,7 +101,7 @@ test('falls back to offline mode for unsupported payment-mode values', async () 
   assert.equal(response.status, 200);
 
   const data = JSON.parse(responseText);
-  assert.equal(data.paymentMode, 'offline');
+  assert.equal(data.paymentMode, 'razorpay');
 
   child.kill('SIGTERM');
   await once(child, 'exit').catch(() => {});
