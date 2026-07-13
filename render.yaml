@@ -15,25 +15,30 @@ services:
         sync: false
       - key: RAZORPAY_KEY_SECRET
         sync: false
-      - key: RAZORPAY_WEBHOOK_SECRET
-        sync: false
       - key: CURRENCY
         value: INR
+      - key: PAYMENT_MODE
+        value: razorpay
+      # WhatsApp Notifications via Twilio
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
-      - key: TWILIO_WHATSAPP_NUMBER
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      - key: ORDER_WHATSAPP_TO
         sync: false
       - key: WHATSAPP_PROVIDER
         value: twilio
-      - key: WHATSAPP_RECIPIENT_NUMBER
-        sync: false
+      # Email Notifications
       - key: GMAIL_USER
         sync: false
-      - key: GMAIL_APP_PASSWORD
+      - key: GMAIL_PASSWORD
         sync: false
-      - key: UPI_ID
+      - key: ORDER_EMAIL
         sync: false
-      - key: PAYMENT_MODE
-        value: razorpay
+      # Alternative WhatsApp provider (optional fallback)
+      - key: CALLMEBOT_API_KEY
+        sync: false
+      - key: CALLMEBOT_PHONE
+        sync: false
