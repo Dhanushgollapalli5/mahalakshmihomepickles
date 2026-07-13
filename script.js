@@ -1193,16 +1193,17 @@ async function showOrderModal(items, total, message, orderNumber) {
       return null;
     }
 
-      const useCallMeBotCheckbox = document.getElementById('use-callmebot');
-      const whatsappProvider = useCallMeBotCheckbox && useCallMeBotCheckbox.checked ? 'callmebot' : undefined;
+    const useCallMeBotCheckbox = document.getElementById('use-callmebot');
+    const whatsappProvider = useCallMeBotCheckbox && useCallMeBotCheckbox.checked ? 'callmebot' : undefined;
+
     return {
       name,
       address,
       phone: finalPhone,
       email,
-      message
+      message,
+      whatsappProvider
     };
-        whatsappProvider
   }
 
   closeBtn.addEventListener('click', closeModal);
