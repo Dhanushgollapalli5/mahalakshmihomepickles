@@ -218,7 +218,16 @@ async function sendOrderWhatsApp(orderData) {
   const provider = (orderData && orderData.whatsappProvider) ? String(orderData.whatsappProvider).toLowerCase() : (WHATSAPP_PROVIDER || (CALLMEBOT_API_KEY ? 'callmebot' : (twilioClient ? 'twilio' : 'none')));
 
   if (provider === 'callmebot') {
-    return sendOrderWhatsAppCallMeBot(orderData);
+    if (CALLMEBOT_API_KEY && CALLMEBOT_PHONE) {
+      return sendOrderWhatsAppCallMeBot(orderData);
+    }
+
+    if (twilioClient && TWILIO_WHATSAPP_FROM) {
+      console.warn('CallMeBot is not configured; falling back to Twilio WhatsApp.');
+      return sendOrderWhatsApp({ ...orderData, whatsappProvider: 'twilio' });
+    }
+
+    throw new Error('CallMeBot configuration is missing and Twilio WhatsApp is not configured');
   }
 
   if (provider === 'twilio') {
