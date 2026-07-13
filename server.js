@@ -7,6 +7,10 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 require('dotenv').config({ override: true });
 
+const FALLBACK_RAZORPAY_KEY_ID = 'rzp_live_TCrlzvXXIOAg6u';
+const FALLBACK_RAZORPAY_KEY_SECRET = 'V4aPyPrssuAWcyFuUKvz9fzG';
+const isProductionRuntime = ['production', 'staging'].includes((process.env.NODE_ENV || '').toLowerCase()) || process.env.RENDER === 'true';
+
 const {
   PORT = 3000,
   GMAIL_USER,
@@ -20,9 +24,12 @@ const {
   CALLMEBOT_PHONE,
   WHATSAPP_PROVIDER: WHATSAPP_PROVIDER_ENV,
   PAYMENT_MODE = 'razorpay',
-  RAZORPAY_KEY_ID,
-  RAZORPAY_KEY_SECRET
+  RAZORPAY_KEY_ID: ENV_RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: ENV_RAZORPAY_KEY_SECRET
 } = process.env;
+
+const RAZORPAY_KEY_ID = ENV_RAZORPAY_KEY_ID || (isProductionRuntime ? FALLBACK_RAZORPAY_KEY_ID : '');
+const RAZORPAY_KEY_SECRET = ENV_RAZORPAY_KEY_SECRET || (isProductionRuntime ? FALLBACK_RAZORPAY_KEY_SECRET : '');
 
 const WHATSAPP_PROVIDER = (WHATSAPP_PROVIDER_ENV || '').toLowerCase();
 
@@ -59,7 +66,11 @@ const razorpay = hasRazorpayConfig ? new Razorpay({
 }) : null;
 
 if (!hasRazorpayConfig) {
-  console.warn('Razorpay keys are not configured. Online payment mode is enabled, but payment creation will fail until you add your Razorpay keys.');
+  if (isProductionRuntime) {
+    console.warn('Razorpay keys are not configured in the deployment environment. Using the bundled production fallback values for checkout.');
+  } else {
+    console.warn('Razorpay keys are not configured. Online payment mode is enabled, but payment creation will fail until you add your Razorpay keys.');
+  }
 }
 
 // Initialize email transporter
