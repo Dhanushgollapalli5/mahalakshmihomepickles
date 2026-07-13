@@ -62,6 +62,7 @@ sudo certbot --nginx -d mahalakshmihomepickles.com -d www.mahalakshmihomepickles
 
 6. Verify
 - Visit https://mahalakshmihomepickles.com/api/config and expect JSON with `razorpayKey`/`razorpayKeyId`.
+- If Razorpay secrets are not set yet, the app should still start and return `paymentMode: "offline"` so the API stays reachable.
 - Ensure frontend is hosted on same domain or uses correct API base URL.
 
 Troubleshooting notes

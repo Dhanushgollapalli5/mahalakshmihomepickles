@@ -32,6 +32,7 @@ UPI_ID                   → Your UPI ID (optional)
 - Once deployed, go to **Settings** → **Custom Domain**
 - Enter `mahalakshmihomepickles.com`
 - Follow DNS steps to point your domain's CNAME to Render
+- If you want your frontend and backend on the same domain, use a subdomain such as `api.mahalakshmihomepickles.com` for the Render service and update the frontend meta tag in `index.html` to that URL
 
 ### 4. Deploy
 
@@ -39,6 +40,7 @@ UPI_ID                   → Your UPI ID (optional)
 - Render builds and deploys automatically
 - Once live, test: `https://mahalakshmihomepickles.com/api/config`
 - Should return JSON with `razorpayKey` and `razorpayKeyId`
+- If Razorpay credentials are not configured yet, the server will still start in offline mode and return the config endpoint with `paymentMode: "offline"`
 
 ### 5. Enable auto-deploy
 
