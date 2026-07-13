@@ -8,22 +8,50 @@ const orderForm = document.querySelector('.order-form');
 
 // Leave empty when backend runs on the same domain as the website.
 // If your Node.js backend is hosted separately, set its full HTTPS URL here
-// either by editing the `REMOTE_API_BASE_URL_MANUAL` below or by adding a
+// either by editing the `REMOTE_API_BASE_URL_MANUAL` below, by setting
+// `window.__MAHA_API_BASE_URL__` before loading this script, or by adding a
 // meta tag in your HTML head: <meta name="api-base-url" content="https://api.example.com">
 // Example manual override:
 // const REMOTE_API_BASE_URL_MANUAL = 'https://api.mahalakshmihomepickles.com';
 const REMOTE_API_BASE_URL_MANUAL = '';
 
+// Set this only when you want the frontend to decide payment mode entirely.
+// Example override: `window.__MAHA_PAYMENT_MODE__ = 'razorpay'` or use the
+// meta tag <meta name="payment-mode" content="razorpay" /> in your HTML.
+const REMOTE_PAYMENT_MODE_MANUAL = '';
+
 // Resolve REMOTE_API_BASE_URL with the following precedence:
 // 1) manual override in this file (REMOTE_API_BASE_URL_MANUAL)
-// 2) meta tag <meta name="api-base-url" content="..."> in the page head
-// 3) fallback to same-origin / localhost behavior (handled below)
+// 2) global override on window.__MAHA_API_BASE_URL__
+// 3) meta tag <meta name="api-base-url" content="..."> in the page head
+// 4) fallback to same-origin / localhost behavior (handled below)
 let REMOTE_API_BASE_URL = REMOTE_API_BASE_URL_MANUAL || '';
+
+if (!REMOTE_API_BASE_URL && typeof window !== 'undefined' && window.__MAHA_API_BASE_URL__) {
+  REMOTE_API_BASE_URL = String(window.__MAHA_API_BASE_URL__).trim().replace(/\/$/, '');
+}
 
 if (!REMOTE_API_BASE_URL && typeof document !== 'undefined') {
   const meta = document.querySelector('meta[name="api-base-url"]');
   if (meta && meta.content && meta.content.trim()) {
     REMOTE_API_BASE_URL = meta.content.trim().replace(/\/$/, '');
+  }
+}
+
+// Resolve REMOTE_PAYMENT_MODE with the following precedence:
+// 1) manual override in this file (REMOTE_PAYMENT_MODE_MANUAL)
+// 2) global override on window.__MAHA_PAYMENT_MODE__
+// 3) meta tag <meta name="payment-mode" content="..."> in the page head
+let REMOTE_PAYMENT_MODE = REMOTE_PAYMENT_MODE_MANUAL || '';
+
+if (!REMOTE_PAYMENT_MODE && typeof window !== 'undefined' && window.__MAHA_PAYMENT_MODE__) {
+  REMOTE_PAYMENT_MODE = String(window.__MAHA_PAYMENT_MODE__).trim();
+}
+
+if (!REMOTE_PAYMENT_MODE && typeof document !== 'undefined') {
+  const meta = document.querySelector('meta[name="payment-mode"]');
+  if (meta && meta.content && meta.content.trim()) {
+    REMOTE_PAYMENT_MODE = meta.content.trim();
   }
 }
 
@@ -53,6 +81,20 @@ const DEFAULT_PAYMENT_CONFIG = {
 
 let paymentConfig = null;
 
+function normalizePaymentMode(mode) {
+  const normalizedMode = String(mode || '').toLowerCase().trim();
+
+  if (!normalizedMode) {
+    return 'offline';
+  }
+
+  if (['razorpay', 'online', 'online-payment', 'pay', 'card', 'upi'].includes(normalizedMode)) {
+    return 'razorpay';
+  }
+
+  return 'offline';
+}
+
 async function loadPaymentConfig() {
   if (paymentConfig) return paymentConfig;
 
@@ -68,9 +110,12 @@ async function loadPaymentConfig() {
 
   try {
     const data = await fetchConfig(PAYMENT_CONFIG_URL);
+    const backendMode = normalizePaymentMode(data.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode);
+    const finalMode = normalizePaymentMode(REMOTE_PAYMENT_MODE || backendMode);
     paymentConfig = {
-      paymentMode: data.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode,
-      razorpayKeyId: data.razorpayKeyId || data.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId
+      paymentMode: finalMode,
+      razorpayKeyId: data.razorpayKeyId || data.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId,
+      supportsRazorpay: Boolean(data.razorpayKeyId || data.razorpayKey)
     };
     return paymentConfig;
   } catch (error) {
@@ -81,9 +126,11 @@ async function loadPaymentConfig() {
       try {
         const fallbackData = await fetchConfig(sameOriginUrl);
         console.warn(`Loaded payment config from fallback ${sameOriginUrl}.`);
+        const backendMode = normalizePaymentMode(fallbackData.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode);
         paymentConfig = {
-          paymentMode: fallbackData.paymentMode || DEFAULT_PAYMENT_CONFIG.paymentMode,
-          razorpayKeyId: fallbackData.razorpayKeyId || fallbackData.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId
+          paymentMode: normalizePaymentMode(REMOTE_PAYMENT_MODE || backendMode),
+          razorpayKeyId: fallbackData.razorpayKeyId || fallbackData.razorpayKey || DEFAULT_PAYMENT_CONFIG.razorpayKeyId,
+          supportsRazorpay: Boolean(fallbackData.razorpayKeyId || fallbackData.razorpayKey)
         };
         return paymentConfig;
       } catch (fallbackError) {

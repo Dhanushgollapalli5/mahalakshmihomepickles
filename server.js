@@ -26,23 +26,49 @@ const {
 
 const WHATSAPP_PROVIDER = (WHATSAPP_PROVIDER_ENV || '').toLowerCase();
 
-const isRazorpayMode = PAYMENT_MODE === 'razorpay';
-const isOfflineMode = PAYMENT_MODE === 'offline';
-let effectivePaymentMode = PAYMENT_MODE;
+function normalizePaymentMode(rawValue) {
+  const mode = String(rawValue || '').toLowerCase().trim();
 
-if (!isRazorpayMode && !isOfflineMode) {
-  console.error(`PAYMENT_MODE=${PAYMENT_MODE} is not supported. Use razorpay or offline.`);
-  process.exit(1);
+  if (!mode) {
+    return 'offline';
+  }
+
+  const aliases = {
+    razorpay: 'razorpay',
+    online: 'razorpay',
+    'online-payment': 'razorpay',
+    pay: 'razorpay',
+    card: 'razorpay',
+    upi: 'razorpay',
+    offline: 'offline',
+    manual: 'offline',
+    cod: 'offline',
+    cash: 'offline',
+    'cash-on-delivery': 'offline',
+    none: 'offline'
+  };
+
+  return aliases[mode] || 'offline';
 }
 
-const razorpay = isRazorpayMode ? new Razorpay({
+const requestedPaymentMode = normalizePaymentMode(PAYMENT_MODE);
+const isRazorpayMode = requestedPaymentMode === 'razorpay';
+const isOfflineMode = requestedPaymentMode === 'offline';
+let effectivePaymentMode = requestedPaymentMode;
+
+if (requestedPaymentMode !== (PAYMENT_MODE || '').toLowerCase().trim()) {
+  console.warn(`PAYMENT_MODE=${PAYMENT_MODE} was normalized to ${effectivePaymentMode}.`);
+}
+
+const hasRazorpayConfig = Boolean(RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET);
+const razorpay = hasRazorpayConfig ? new Razorpay({
   key_id: RAZORPAY_KEY_ID,
   key_secret: RAZORPAY_KEY_SECRET
 }) : null;
 
-if (isRazorpayMode && (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET)) {
-  console.error('PAYMENT_MODE=razorpay but RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Aborting startup.');
-  process.exit(1);
+if (isRazorpayMode && !hasRazorpayConfig) {
+  console.warn('PAYMENT_MODE=razorpay but RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Falling back to offline payment mode.');
+  effectivePaymentMode = 'offline';
 }
 
 // Initialize email transporter
@@ -258,20 +284,19 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 app.get('/api/config', (req, res) => {
+  const backendMode = hasRazorpayConfig ? 'razorpay' : (effectivePaymentMode || 'offline');
   res.json({
     razorpayKey: RAZORPAY_KEY_ID || '',
     razorpayKeyId: RAZORPAY_KEY_ID || '',
     currency: process.env.CURRENCY || 'INR',
-    paymentMode: PAYMENT_MODE || effectivePaymentMode || 'offline',
+    paymentMode: backendMode,
+    supportsRazorpay: hasRazorpayConfig,
     upiId: process.env.UPI_ID || ''
   });
 });
 
 app.post('/api/create-order', async (req, res) => {
-  if (!isRazorpayMode) {
-    return res.status(400).json({ success: false, error: 'Online order creation is not supported in offline payment mode.' });
-  }
-  if (!razorpay) {
+  if (!hasRazorpayConfig || !razorpay) {
     return res.status(400).json({ success: false, error: 'Razorpay is not configured.' });
   }
 
@@ -303,8 +328,8 @@ function verifyRazorpaySignature({ razorpay_order_id, razorpay_payment_id, razor
 }
 
 app.post('/api/verify-payment', async (req, res) => {
-  if (!isRazorpayMode) {
-    return res.status(400).json({ success: false, error: 'Payment verification is not available in offline payment mode.' });
+  if (!hasRazorpayConfig) {
+    return res.status(400).json({ success: false, error: 'Payment verification is not available because Razorpay is not configured.' });
   }
 
   const {
