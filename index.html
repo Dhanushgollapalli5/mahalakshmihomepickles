@@ -352,7 +352,7 @@
     <section class="order-section container" id="order">
       <div class="order-copy">
         <h2>Place your order</h2>
-        <p>Select products from the catalogue, enter your delivery details, and pay securely via Razorpay checkout to complete your order online.</p>
+        <p>Use the product catalogue below and the cart drawer for secure Razorpay checkout. If you want, you can also send a quick WhatsApp order request directly from this form.</p>
       </div>
       <form class="order-form">
         <label class="form-field">
@@ -368,8 +368,12 @@
           <span>Product details</span>
           <textarea name="message" rows="5" placeholder="Enter products, quantity or special request" required></textarea>
         </label>
-        <button class="button form-submit" type="submit">Send Order Request</button>
-        <p class="form-note">You can also call at <a href="tel:+919392440953">93924 40953</a>.</p>
+        <div class="form-actions">
+          <button class="button form-submit" type="submit">Send WhatsApp Order</button>
+          <button class="button form-submit" type="button" id="send-order-whatsapp">Order via WhatsApp</button>
+          <button class="button form-submit" type="button" id="open-cart-checkout">Open Cart for Razorpay</button>
+        </div>
+        <p class="form-note">This form can send your order to WhatsApp, and the cart drawer below opens Razorpay checkout for secure payment.</p>
       </form>
     </section>
 

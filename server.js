@@ -108,6 +108,40 @@ function normalizeWhatsAppNumber(rawNumber) {
   return `+${cleaned}`;
 }
 
+function normalizeWhatsAppProvider(rawValue) {
+  const provider = String(rawValue || '').toLowerCase().trim();
+  if (!provider || provider === 'auto' || provider === 'default' || provider === 'best') {
+    return 'auto';
+  }
+  if (provider === 'callmebot') {
+    return 'callmebot';
+  }
+  if (provider === 'twilio') {
+    return 'twilio';
+  }
+  return 'auto';
+}
+
+function resolveWhatsAppProvider(orderData) {
+  const providerOverride = normalizeWhatsAppProvider(orderData?.whatsappProvider || WHATSAPP_PROVIDER);
+  const hasTwilio = Boolean(twilioClient && TWILIO_WHATSAPP_FROM && (ORDER_WHATSAPP_TO || orderData?.customerPhone));
+  const hasCallMeBot = Boolean(CALLMEBOT_API_KEY && (CALLMEBOT_PHONE || ORDER_WHATSAPP_TO || orderData?.customerPhone));
+
+  if (providerOverride === 'twilio') {
+    return hasTwilio ? 'twilio' : hasCallMeBot ? 'callmebot' : 'none';
+  }
+  if (providerOverride === 'callmebot') {
+    return hasCallMeBot ? 'callmebot' : hasTwilio ? 'twilio' : 'none';
+  }
+  if (providerOverride === 'none') {
+    return 'none';
+  }
+
+  if (hasTwilio) return 'twilio';
+  if (hasCallMeBot) return 'callmebot';
+  return 'none';
+}
+
 function formatCallMeBotNumber(rawNumber) {
   if (!rawNumber) return null;
   const digits = rawNumber.trim().replace(/\D/g, '');
@@ -118,44 +152,127 @@ function formatCallMeBotNumber(rawNumber) {
   return digits.replace(/^0+/, '');
 }
 
-async function sendOrderWhatsAppCallMeBot(orderData) {
-  if (!CALLMEBOT_API_KEY || !CALLMEBOT_PHONE) {
-    throw new Error('CallMeBot configuration is missing');
+function normalizeTwilioWhatsAppNumber(rawNumber) {
+  const normalized = normalizeWhatsAppNumber(rawNumber);
+  if (!normalized) return null;
+  return normalized.replace(/^[^0-9+]+/, '');
+}
+
+async function sendOrderWhatsAppTwilio(orderData) {
+  if (!twilioClient || !TWILIO_WHATSAPP_FROM) {
+    throw new Error('Twilio WhatsApp configuration is missing');
   }
 
-  const { orderId, amount, customerName, customerEmail, orderSummary } = orderData;
-  const customerTarget = formatCallMeBotNumber(orderData.customerPhone);
-  const adminTarget = formatCallMeBotNumber(CALLMEBOT_PHONE);
-  const targetPhone = customerTarget || adminTarget;
-
-  if (!targetPhone) {
-    throw new Error('No valid WhatsApp recipient number for CallMeBot');
+  const from = String(TWILIO_WHATSAPP_FROM).trim();
+  if (!from.startsWith('whatsapp:')) {
+    throw new Error('TWILIO_WHATSAPP_FROM must start with whatsapp:');
   }
 
-  const msg = `✅ New Payment!\n` +
+  const {
+    orderId,
+    amount,
+    customerName,
+    customerEmail,
+    orderSummary,
+    deliveryAddress,
+    paymentMethod = 'Razorpay'
+  } = orderData;
+
+  const adminTarget = normalizeTwilioWhatsAppNumber(ORDER_WHATSAPP_TO);
+  const customerTarget = normalizeTwilioWhatsAppNumber(orderData.customerPhone);
+  const targets = [...new Set([adminTarget, customerTarget].filter(Boolean))];
+
+  if (targets.length === 0) {
+    throw new Error('No valid WhatsApp recipient number for Twilio');
+  }
+
+  const msg = `✅ New Order!\n` +
     `👤 Name: ${customerName}\n` +
     `📧 Email: ${customerEmail || 'N/A'}\n` +
     `💰 Amount: ₹${amount}\n` +
-    `🛒 Product: ${orderSummary}\n` +
-    `🔖 Order ID: ${orderId}`;
+    `🔖 Order ID: ${orderId}\n` +
+    `📝 Summary: ${orderSummary || 'N/A'}\n` +
+    `📍 Delivery: ${deliveryAddress || 'N/A'}\n` +
+    `💳 Payment: ${paymentMethod}`;
 
-  const url = new URL('https://api.callmebot.com/whatsapp.php');
-  url.searchParams.set('phone', targetPhone);
-  url.searchParams.set('text', msg);
-  url.searchParams.set('apikey', CALLMEBOT_API_KEY);
+  const results = await Promise.allSettled(targets.map(async (target) => {
+    const to = `whatsapp:${target}`;
+    const message = await twilioClient.messages.create({ from, to, body: msg });
+    console.log('Twilio WhatsApp sent to:', to, 'sid:', message.sid);
+    return { target: to };
+  }));
 
-  const response = await fetch(url.toString());
-  const body = await response.text();
+  const successful = results.filter((item) => item.status === 'fulfilled').map((item) => item.value.target);
+  const failed = results.filter((item) => item.status === 'rejected').map((item) => ({ reason: item.reason?.message || item.reason }));
 
-  if (!response.ok) {
-    throw new Error(`CallMeBot request failed: ${response.status} ${response.statusText}`);
+  if (successful.length === 0) {
+    console.error('Failed to send Twilio WhatsApp:', failed);
+    throw new Error('Failed to send WhatsApp to any configured recipient');
   }
-  if (body.toLowerCase().includes('error') || body.toLowerCase().includes('failed')) {
-    throw new Error(`CallMeBot response error: ${body}`);
+
+  return { success: true, sentTo: successful, failed, provider: 'twilio' };
+}
+
+async function sendOrderWhatsAppCallMeBot(orderData) {
+  if (!CALLMEBOT_API_KEY || !(CALLMEBOT_PHONE || ORDER_WHATSAPP_TO)) {
+    throw new Error('CallMeBot configuration is missing');
   }
 
-  console.log('CallMeBot WhatsApp sent to:', targetPhone);
-  return { success: true, targetPhone, provider: 'callmebot' };
+  const {
+    orderId,
+    amount,
+    customerName,
+    customerEmail,
+    orderSummary,
+    deliveryAddress,
+    paymentMethod = 'Razorpay'
+  } = orderData;
+  const customerTarget = formatCallMeBotNumber(orderData.customerPhone);
+  const adminTarget = formatCallMeBotNumber(CALLMEBOT_PHONE || ORDER_WHATSAPP_TO);
+  const targets = [...new Set([customerTarget, adminTarget].filter(Boolean))];
+
+  if (targets.length === 0) {
+    throw new Error('No valid WhatsApp recipient number for CallMeBot');
+  }
+
+  const msg = `✅ New Order!\n` +
+    `👤 Name: ${customerName}\n` +
+    `📧 Email: ${customerEmail || 'N/A'}\n` +
+    `💰 Amount: ₹${amount}\n` +
+    `🔖 Order ID: ${orderId}\n` +
+    `📝 Summary: ${orderSummary || 'N/A'}\n` +
+    `📍 Delivery: ${deliveryAddress || 'N/A'}\n` +
+    `💳 Payment: ${paymentMethod}`;
+
+  const results = await Promise.allSettled(targets.map(async (targetPhone) => {
+    const url = new URL('https://api.callmebot.com/whatsapp.php');
+    url.searchParams.set('phone', targetPhone);
+    url.searchParams.set('text', msg);
+    url.searchParams.set('apikey', CALLMEBOT_API_KEY);
+
+    const response = await fetch(url.toString());
+    const body = await response.text();
+
+    if (!response.ok) {
+      throw new Error(`CallMeBot request failed: ${response.status} ${response.statusText}`);
+    }
+    if (body.toLowerCase().includes('error') || body.toLowerCase().includes('failed')) {
+      throw new Error(`CallMeBot response error: ${body}`);
+    }
+
+    console.log('CallMeBot WhatsApp sent to:', targetPhone);
+    return { targetPhone };
+  }));
+
+  const successful = results.filter((item) => item.status === 'fulfilled').map((item) => item.value.targetPhone);
+  const failed = results.filter((item) => item.status === 'rejected').map((item) => ({ reason: item.reason?.message || item.reason }));
+
+  if (successful.length === 0) {
+    console.error('Failed to send CallMeBot WhatsApp:', failed);
+    throw new Error('Failed to send WhatsApp to any configured recipient');
+  }
+
+  return { success: true, sentTo: successful, failed, provider: 'callmebot' };
 }
 
 // Send email notification
@@ -165,9 +282,19 @@ async function sendOrderEmail(orderData) {
     return;
   }
 
-  const { orderId, amount, customerName, customerEmail, customerPhone, orderDetails, deliveryAddress, paymentMethod = 'Razorpay' } = orderData;
+  const {
+    orderId,
+    amount,
+    customerName,
+    customerEmail,
+    customerPhone,
+    orderDetails,
+    orderSummary,
+    deliveryAddress,
+    paymentMethod = 'Razorpay'
+  } = orderData;
 
-  const paymentParagraph = `<p>Your payment of <strong>₹${amount}</strong> has been received via <strong>Razorpay</strong>. Thank you!</p>`;
+  const paymentParagraph = `<p>Your payment of <strong>₹${amount}</strong> has been received via <strong>${paymentMethod}</strong>. Thank you!</p>`;
 
   const emailContent = `
     <h2>Order Confirmation - Mahalakshmi Home Pickles</h2>
@@ -181,6 +308,8 @@ async function sendOrderEmail(orderData) {
       <li><strong>Payment Method:</strong> ${paymentMethod}</li>
       <li><strong>Date:</strong> ${new Date().toLocaleString('en-IN')}</li>
     </ul>
+    <h3>Order Summary</h3>
+    <p>${orderSummary || 'N/A'}</p>
     <h3>Products Ordered</h3>
     <pre>${orderDetails}</pre>
     <h3>Delivery Address</h3>
@@ -195,15 +324,13 @@ async function sendOrderEmail(orderData) {
   try {
     const mailOptions = {
       from: GMAIL_USER,
+      to: ORDER_EMAIL,
       subject: `Order Confirmation #${orderId}`,
       html: emailContent
     };
 
     if (customerEmail) {
-      mailOptions.to = customerEmail;
-      mailOptions.bcc = ORDER_EMAIL;
-    } else {
-      mailOptions.to = ORDER_EMAIL;
+      mailOptions.bcc = customerEmail;
     }
 
     await emailTransporter.sendMail(mailOptions);
@@ -215,65 +342,27 @@ async function sendOrderEmail(orderData) {
 
 // Send WhatsApp notification
 async function sendOrderWhatsApp(orderData) {
-  const provider = (orderData && orderData.whatsappProvider) ? String(orderData.whatsappProvider).toLowerCase() : (WHATSAPP_PROVIDER || (CALLMEBOT_API_KEY ? 'callmebot' : (twilioClient ? 'twilio' : 'none')));
-
-  if (provider === 'callmebot') {
-    if (CALLMEBOT_API_KEY && CALLMEBOT_PHONE) {
-      return sendOrderWhatsAppCallMeBot(orderData);
-    }
-
-    if (twilioClient && TWILIO_WHATSAPP_FROM) {
-      console.warn('CallMeBot is not configured; falling back to Twilio WhatsApp.');
-      return sendOrderWhatsApp({ ...orderData, whatsappProvider: 'twilio' });
-    }
-
-    throw new Error('CallMeBot configuration is missing and Twilio WhatsApp is not configured');
-  }
+  const provider = resolveWhatsAppProvider(orderData);
 
   if (provider === 'twilio') {
-    if (!twilioClient || !TWILIO_WHATSAPP_FROM) {
-      throw new Error('Twilio WhatsApp is not configured');
-    }
-
-    const { orderId, amount, customerName, customerPhone, orderSummary, paymentMethod = 'Razorpay' } = orderData;
-    const customerTarget = normalizeWhatsAppNumber(customerPhone);
-    const adminTarget = normalizeWhatsAppNumber(ORDER_WHATSAPP_TO);
-    const targets = [...new Set([customerTarget, adminTarget].filter(Boolean))];
-
-    if (targets.length === 0) {
-      throw new Error('No valid WhatsApp recipient number for Twilio');
-    }
-
-    const paymentLine = `Payment received via Razorpay`;
-    const message = `\nMahalakshmi Home Pickles - Order Confirmation\n\nOrder ID: ${orderId}\nAmount: ₹${amount}\n${paymentLine}\nCustomer: ${customerName}\n\n${orderSummary}\n\nThank you!\n  `.trim();
-
-    const results = await Promise.allSettled(targets.map(async (targetPhone) => {
-      const result = await twilioClient.messages.create({
-        body: message,
-        from: TWILIO_WHATSAPP_FROM,
-        to: `whatsapp:${targetPhone}`
-      });
-      console.log('WhatsApp message sent to:', targetPhone, 'SID:', result.sid);
-      return { targetPhone, sid: result.sid };
-    }));
-
-    const successful = results.filter((item) => item.status === 'fulfilled').map((item) => item.value.targetPhone);
-    const failed = results.filter((item) => item.status === 'rejected').map((item) => ({ reason: item.reason?.message || item.reason }));
-
-    if (successful.length === 0) {
-      console.error('Failed to send WhatsApp:', failed);
-      throw new Error('Failed to send WhatsApp to any configured recipient');
-    }
-
-    return {
-      success: true,
-      sentTo: successful,
-      failed,
-      provider: 'twilio'
-    };
+    return sendOrderWhatsAppTwilio(orderData);
+  }
+  if (provider === 'callmebot') {
+    return sendOrderWhatsAppCallMeBot(orderData);
   }
 
   throw new Error('WhatsApp notifications disabled: no provider configured');
+}
+
+function logOrderNotificationSummary(orderData, emailResult, whatsappResult) {
+  const provider = resolveWhatsAppProvider(orderData);
+  const emailRecipient = ORDER_EMAIL || 'missing-order-email';
+  const emailBcc = orderData.customerEmail ? `,bcc:${orderData.customerEmail}` : '';
+  const whatsappRecipients = provider === 'twilio'
+    ? [...new Set([normalizeWhatsAppNumber(orderData.customerPhone), normalizeWhatsAppNumber(ORDER_WHATSAPP_TO)].filter(Boolean))]
+    : [...new Set([formatCallMeBotNumber(orderData.customerPhone), formatCallMeBotNumber(CALLMEBOT_PHONE || ORDER_WHATSAPP_TO)].filter(Boolean))];
+
+  console.log(`Order ${orderData.orderId} notification summary: email -> ${emailRecipient}${emailBcc} [sent=${emailResult}] | whatsapp -> ${provider}:${whatsappRecipients.join(', ')} [sent=${whatsappResult}]`);
 }
 
 const app = express();
@@ -418,10 +507,14 @@ app.post('/api/test-notification', async (req, res) => {
       sendOrderWhatsApp(notificationData)
     ]);
 
+    const emailSent = results[0].status === 'fulfilled';
+    const whatsappSent = results[1].status === 'fulfilled';
+    logOrderNotificationSummary(notificationData, emailSent, whatsappSent);
+
     return res.json({
       success: true,
       email: !!GMAIL_USER && !!ORDER_EMAIL,
-      whatsapp: !!twilioClient,
+      whatsapp: Boolean(CALLMEBOT_API_KEY && (CALLMEBOT_PHONE || ORDER_WHATSAPP_TO)),
       results: results.map((result) => ({ status: result.status, reason: result.status === 'rejected' ? result.reason?.message || result.reason : undefined }))
     });
   } catch (error) {
@@ -456,10 +549,14 @@ app.post('/api/order-notification', async (req, res) => {
       sendOrderWhatsApp(notificationData)
     ]);
 
+    const emailSent = results[0].status === 'fulfilled';
+    const whatsappSent = results[1].status === 'fulfilled';
+    logOrderNotificationSummary(notificationData, emailSent, whatsappSent);
+
     return res.json({
       success: true,
-      emailSent: results[0].status === 'fulfilled',
-      whatsappSent: results[1].status === 'fulfilled',
+      emailSent,
+      whatsappSent,
       results: results.map((result) => ({ status: result.status, reason: result.status === 'rejected' ? result.reason?.message || result.reason : undefined }))
     });
   } catch (error) {

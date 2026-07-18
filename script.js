@@ -5,6 +5,17 @@ const themeToggle = document.querySelector('.theme-toggle');
 const scrollProgress = document.querySelector('.scroll-progress');
 const faqItems = document.querySelectorAll('.faq-item');
 const orderForm = document.querySelector('.order-form');
+const SHOP_WHATSAPP_NUMBER = '919392440953';
+
+function buildWhatsAppOrderUrl(orderData) {
+  const message = `Hello Mahalakshmi Home Pickles,%0A%0A` +
+    `I would like to place an order.%0A` +
+    `Name: ${encodeURIComponent(orderData.name)}%0A` +
+    `Phone: ${encodeURIComponent(orderData.phone)}%0A` +
+    `Details: ${encodeURIComponent(orderData.message)}%0A` +
+    `Delivery Address: ${encodeURIComponent(orderData.address || 'Not provided')}`;
+  return `https://wa.me/${SHOP_WHATSAPP_NUMBER}?text=${message}`;
+}
 
 // Leave empty when backend runs on the same domain as the website.
 // If your Node.js backend is hosted separately, set its full HTTPS URL here
@@ -395,6 +406,8 @@ class CartDrawer {
     this.cart.splice(index, 1);
     this.saveCart();
     this.updateCart();
+    this.updateCartButton();
+    this.updateCartButton();
   }
 
   updateCart() {
@@ -438,7 +451,23 @@ class CartDrawer {
 
     this.itemsContainer.innerHTML = html;
     if (this.totalDisplay) this.totalDisplay.textContent = `₹${total}`;
+    this.updateCartButton();
     console.debug('Cart updated with', this.cart.length, 'items, total:', total);
+  }
+
+  updateCartButton() {
+    const cartButton = document.getElementById('open-cart-checkout');
+    if (!cartButton) return;
+
+    if (this.cart.length > 0) {
+      cartButton.disabled = false;
+      cartButton.classList.remove('disabled');
+      cartButton.textContent = 'Open Cart for Razorpay';
+    } else {
+      cartButton.disabled = true;
+      cartButton.classList.add('disabled');
+      cartButton.textContent = 'Add items to cart for Razorpay';
+    }
   }
 
   saveCart() {
@@ -572,8 +601,34 @@ if (orderForm) {
       return;
     }
 
-    showNotification('Select products from the catalogue and use Proceed to Order for Razorpay checkout.', 'info');
+    const nameInput = orderForm.querySelector('input[name="name"]');
+    const phoneInput = orderForm.querySelector('input[name="phone"]');
+    const messageInput = orderForm.querySelector('textarea[name="message"]');
+    const name = nameInput ? nameInput.value.trim() : '';
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+    const message = messageInput ? messageInput.value.trim() : '';
+
+    if (!name || !phone || !message) {
+      showNotification('Please fill name, phone, and order details before sending to WhatsApp.', 'error');
+      return;
+    }
+
+    const url = buildWhatsAppOrderUrl({ name, phone, message, address: '' });
+    window.open(url, '_blank');
+    showNotification('Opening WhatsApp with your order details.', 'success');
   });
+
+  const cartButton = document.getElementById('open-cart-checkout');
+  if (cartButton) {
+    cartButton.addEventListener('click', () => {
+      if (window.cartDrawer && typeof window.cartDrawer.toggleDrawer === 'function') {
+        window.cartDrawer.toggleDrawer();
+        showNotification('Opening cart for Razorpay checkout.', 'info');
+      } else {
+        showNotification('Please add products to the cart first, then use the cart icon.', 'error');
+      }
+    });
+  }
 }
 
 const trackOrderForm = document.getElementById('trackOrderForm');
